@@ -1,11 +1,10 @@
 # Name ShuBox
 
- 
--そこらへんにいる人
+ ーーそこらへんで生きている人です。
  
 # DEMO
  
-"ShuBox"の魅力が直感的に伝えわるデモ動画や図解を載せる
+
  
 # Feature
 
@@ -15,9 +14,7 @@
  
 "ShuBox"
  
-* huga 3.5.2
-* hogehuga 1.0.2
- 
+
 # Installation
  
 Requirementで列挙したライブラリなどのインストール方法を説明する
@@ -25,15 +22,7 @@ Requirementで列挙したライブラリなどのインストール方法を説
 ```bash
 pip install huga_package
 ```
- 
-# Usage
- 
-DEMOの実行方法など、"hoge"の基本的な使い方を説明する
- 
-```bash
-git clone https://github.com/hoge/~
-cd examples
-python demo.py
+
 ```
  
 # Note
@@ -51,8 +40,7 @@ python demo.py
 # License
 ライセンス何
  
-"hoge" is under [MIT license](https://en.wikipedia.org/wiki/MIT_License).
- 
+
 社内向けなら社外秘であることを明示してる
  
 "hoge" is Confidential.
