@@ -15,31 +15,6 @@
 "ShuBox"
  
 
-# Installation
- 
-
- 
-```bash
-pip install huga_package
-```
-
-```
- 
-# Note
- 
-注意点などがあれば書く
- 
-# Author
- 
-作成情報を列挙する
- 
-* 作成者
-* 所属
-* E-mail
- 
-# License
-ライセンス何
- 
 
 社内向けなら社外秘であることを明示してる
  
