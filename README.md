@@ -2,7 +2,7 @@
 
  ーーそこらへんで生きている人です。
  
-## My　joub
+## My　job
 
 IT infra engineer
 
