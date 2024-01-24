@@ -1,10 +1,10 @@
 # Name ShuBox
 
- ーーそこらへんで生きている人です。
+ #### ーーそこらへんで生きている人です。
  
 ## Myjob
 
-IT infra engineer
+##### IT infra engineer(なんでも屋）
 
 ## Myskills
 ##### AWS（ぼちぼち）
