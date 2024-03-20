@@ -8,6 +8,7 @@ ShuBox
 ##### IT infra engineer(なんでも屋）
 
 ## Myskills
+##### Iac（独学で勉強中）
 ##### AWS（ぼちぼち）
 ##### GCP（まぁまぁ）
 ##### Linux（基本的にapt系をよく触ります）
