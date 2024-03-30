@@ -26,24 +26,24 @@
 
 3. ネットワークの詳細確認
 
-作成されたネットワークの詳細を確認するには、以下のコマンドを実行します。
+#### 作成されたネットワークの詳細を確認するには、以下のコマンドを実行します。
 
-docker network ls
-このコマンドを実行すると、以下の情報が表示されます。
+#### docker network ls
+#### このコマンドを実行すると、以下の情報が表示されます。
 
-NETWORK ID NAME DRIVER SCOPE
-fad5fce49196 common_link bridge local
-d3cb99258187 back bridge local
+#### NETWORK ID NAME DRIVER SCOPE
+#### fad5fce49196 common_link bridge local
+#### d3cb99258187 back bridge local
 4. ネットワークの使用例
 
-作成されたネットワークは、コンテナを起動時に--networkオプションで指定することで使用できます。
+#### 作成されたネットワークは、コンテナを起動時に--networkオプションで指定することで使用できます。
 
-例えば、common_linkネットワークに接続するコンテナを起動するには、以下のコマンドを実行します。
+#### 例えば、common_linkネットワークに接続するコンテナを起動するには、以下のコマンドを実行します。
 
-docker run --network common_link <image-name>
-同様に、backネットワークに接続するコンテナを起動するには、以下のコマンドを実行します。
+#### docker run --network common_link <image-name>
+#### 同様に、backネットワークに接続するコンテナを起動するには、以下のコマンドを実行します。
 
-docker run --network back <image-name>
+#### docker run --network back <image-name>
 5. 補足
 
 上記のコマンドは、Docker Engineがインストールされている環境で実行する必要があります。
