@@ -17,6 +17,6 @@ ShuBox(シューボックス)
 ####  デプロイ系ボチボチ
 ##### GCP（まぁまぁ）
 ##### Linux（基本的にapt系をよく触ります）
-##### UbuntuやDebianは好きです。時々、RedHatを触ります　
+##### UbuntuやDebianは好きです。時々、RedHatを触ります　。AmazonLinuxも。。。
 
 
