@@ -7,7 +7,7 @@
 ## Myjob
 
 ##### IT infra engineer(なんでも屋）
-####  飲み屋にたむろする・・
+
 
 ## Myskills
 #### PHP
