@@ -22,6 +22,4 @@
   - 基本的にapt系をよく触ります
   - UbuntuやDebianが好きです。時々、RedHatも触ります。Amazon Linuxも...
 
-## その他
 
-- デプロイ系（ぼちぼち）
