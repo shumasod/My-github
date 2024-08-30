@@ -20,6 +20,6 @@
 - **GCP**（まぁまぁ）
 - **Linux**
   - 基本的にapt系をよく触ります
-  - UbuntuやDebianが好きです。時々、RedHatも触ります。Amazon Linuxも...
+  - UbuntuやDebianが好きです。
 
 
