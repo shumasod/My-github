@@ -1,54 +1,83 @@
+# HTTP Method Not Allowed エラーの解説
 
+## エラー内容
+```
+Route: api/user/segment
+Error: Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException
+許可メソッド: PUT
+使用メソッド: GET
+```
 
+## 原因と解決方法
 
-1. コマンド解説
+### 1. エラーの発生理由
+- ルートで許可されていないHTTPメソッドでアクセスを試みた
+- このケースでは`GET`メソッドを使用したが、ルートは`PUT`のみ許可
 
-#### docker network create: Dockerネットワークを作成するコマンドです。
+### 2. 解決手順
+- **APIクライアント(Postman等)の場合:**
+  ```
+  メソッドを GET → PUT に変更
+  ```
 
-#### common_link: 作成するネットワークの名前です。
+- **フロントエンドコードの場合:**
+  ```javascript
+  // 誤った例
+  fetch('/api/user/segment')
+  
+  // 正しい例
+  fetch('/api/user/segment', {
+    method: 'PUT',
+    // ...他の設定
+  })
+  ```
 
-#### back: 作成するネットワークの名前です。
+- **Symfonyルート定義の修正例:**
+  ```yaml
+  # config/routes.yaml
+  api_user_segment:
+    path: /api/user/segment
+    methods: [PUT]  # GETも許可する場合: [GET, PUT]
+  ```
 
-2. 作成されたネットワーク
+## デバッグのヒント
 
-#### 上記の2つのコマンドを実行すると、以下の2つのネットワークが作成されます。
+### 1. ルート情報の確認
+```bash
+# 現在のルート一覧を表示
+php bin/console debug:router
+```
 
-#### common_linkネットワーク:
-#### 名前: common_link
-#### ドライバー: デフォルトのbridgeドライバー
-#### スコープ: local
-#### 用途: 複数のコンテナ間で共通のリンクを共有したい場合に使用するネットワーク
-#### backネットワーク:
-#### 名前: back
-#### ドライバー: デフォルトのbridgeドライバー
-#### スコープ: local
-#### 用途: バックエンドサービスなどの内部的な通信に使用するネットワーク
+### 2. ログ設定
+```php
+try {
+    // リクエスト処理
+} catch (MethodNotAllowedHttpException $e) {
+    Log::error('Method Not Allowed', [
+        'method' => $request->getMethod(),
+        'path' => $request->getPathInfo(),
+    ]);
+}
+```
 
-3. ネットワークの詳細確認
+## 学習ポイント
+1. HTTPメソッドの役割と使い分け
+   - GET: リソースの取得
+   - PUT: リソースの更新
+   - POST: リソースの作成
+   - DELETE: リソースの削除
 
-#### 作成されたネットワークの詳細を確認するには、以下のコマンドを実行します。
+2. RESTful APIの設計原則
+   - 適切なHTTPメソッドの選択
+   - エラーハンドリングの重要性
+   - 明確なAPIドキュメントの提供
 
-#### docker network ls
-#### このコマンドを実行すると、以下の情報が表示されます。
+3. セキュリティの観点
+   - メソッド制限による不正アクセス防止
+   - 適切なエラーメッセージの返却
 
-#### NETWORK ID NAME DRIVER SCOPE
-#### fad5fce49196 common_link bridge local
-#### d3cb99258187 back bridge local
-4. ネットワークの使用例
-
-#### 作成されたネットワークは、コンテナを起動時に--networkオプションで指定することで使用できます。
-
-#### 例えば、common_linkネットワークに接続するコンテナを起動するには、以下のコマンドを実行します。
-
-#### docker run --network common_link <image-name>
-#### 同様に、backネットワークに接続するコンテナを起動するには、以下のコマンドを実行します。
-
-#### docker run --network back <image-name>
-5. 補足
-
-上記のコマンドは、Docker Engineがインストールされている環境で実行する必要があります。
-ネットワークの詳細については、Docker公式ドキュメントの「ネットワーク」セクションを参照してください。
-6. その他
-
-何か質問があれば、遠慮なく聞いてください。
-
+## 補足
+より詳しい情報は以下を参照:
+- Symfonyドキュメント: ルーティング
+- HTTPメソッドの仕様 (RFC 7231)
+- RESTful API設計のベストプラクティス
