@@ -15,7 +15,7 @@
 
 #### インフラ系
 
-- **IaC**（独学で勉強中）
+- **IaC**（Terraform、CloudFormation、OpenTofu）
 - **AWS**（ぼちぼち）
 - **GCP**（まぁまぁ）
 - **Linux**
