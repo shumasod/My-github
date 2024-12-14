@@ -12,7 +12,7 @@
 
 - **PHP**
   - Laravel 10～11
-
+- **Python**
 #### インフラ系
 
 - **IaC**（Terraform、CloudFormation、OpenTofu）
