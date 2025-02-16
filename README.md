@@ -17,7 +17,7 @@
 
 - **IaC**（Terraform、CloudFormation、OpenTofu）
 - **AWS**（ぼちぼち）
-- **GCP**（まぁまぁ）
+- **GoogleCloud**（まぁまぁ）
 - **Linux**
   - 基本的にapt系をよく触ります
   - UbuntuやDebianが好きです。
