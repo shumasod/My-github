@@ -1,87 +1,141 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
-import { Bell, AlertTriangle, Battery, Wifi, Bluetooth, BluetoothOff } from 'lucide-react';
+import { Bell, AlertTriangle, Battery, Wifi, Bluetooth, BluetoothOff, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-// Bluetooth service and characteristic UUIDs
+// Constants
 const DEVICE_NAME = 'SetsubunDetector';
 const SERVICE_UUID = '0000FFE0-0000-1000-8000-00805F9B34FB';
 const CHARACTERISTIC_UUID = '0000FFE1-0000-1000-8000-00805F9B34FB';
+const RECONNECT_DELAY = 5000;
+const BATTERY_WARNING_THRESHOLD = 20;
+const DISTANCE_WARNING_THRESHOLD = 3;
+const DISTANCE_DANGER_THRESHOLD = 1;
 
 const SetsubunDetectorBLE = () => {
+  // State management
   const [device, setDevice] = useState(null);
   const [characteristic, setCharacteristic] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState(null);
   const [sensorData, setSensorData] = useState({
     distance: 5,
     motion: false,
-    battery: 100
+    battery: 100,
+    lastUpdate: Date.now()
   });
   const [isActive, setIsActive] = useState(true);
-
-  // Bluetooth接続処理
-  const connectBluetooth = async () => {
-    try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: DEVICE_NAME }],
-        optionalServices: [SERVICE_UUID]
-      });
-
-      device.addEventListener('gattserverdisconnected', onDisconnected);
-      setDevice(device);
-
-      const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-      setCharacteristic(characteristic);
-      setIsConnected(true);
-
-      // データ受信の開始
-      startNotifications(characteristic);
-    } catch (error) {
-      console.error('Bluetooth connection failed:', error);
-      alert('Bluetooth接続に失敗しました。');
-    }
-  };
-
-  // 切断処理
-  const onDisconnected = () => {
-    setIsConnected(false);
-    setDevice(null);
-    setCharacteristic(null);
-  };
-
-  // データ受信の設定
-  const startNotifications = async (characteristic) => {
-    await characteristic.startNotifications();
-    characteristic.addEventListener('characteristicvaluechanged', handleSensorData);
-  };
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   // センサーデータの処理
-  const handleSensorData = (event) => {
+  const handleSensorData = useCallback((event) => {
     const value = event.target.value;
     const decoder = new TextDecoder();
     const data = decoder.decode(value);
     
     try {
       const parsedData = JSON.parse(data);
-      setSensorData({
+      setSensorData(prev => ({
+        ...prev,
         distance: parsedData.distance,
         motion: parsedData.motion,
-        battery: parsedData.battery
-      });
+        battery: parsedData.battery,
+        lastUpdate: Date.now()
+      }));
     } catch (e) {
       console.error('Data parsing error:', e);
+      setError('センサーデータの解析に失敗しました');
+    }
+  }, []);
+
+  // Bluetooth接続処理
+  const connectBluetooth = async () => {
+    if (isConnecting) return;
+    
+    setIsConnecting(true);
+    setError(null);
+    
+    try {
+      const newDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ name: DEVICE_NAME }],
+        optionalServices: [SERVICE_UUID]
+      });
+
+      newDevice.addEventListener('gattserverdisconnected', handleDisconnection);
+      setDevice(newDevice);
+
+      const server = await newDevice.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      
+      await char.startNotifications();
+      char.addEventListener('characteristicvaluechanged', handleSensorData);
+      
+      setCharacteristic(char);
+      setIsConnected(true);
+      setReconnectAttempts(0);
+    } catch (error) {
+      console.error('Bluetooth connection failed:', error);
+      setError(getBetterErrorMessage(error));
+    } finally {
+      setIsConnecting(false);
     }
   };
 
+  // 切断処理
+  const handleDisconnection = useCallback(async () => {
+    setIsConnected(false);
+    
+    if (isActive && reconnectAttempts < 3) {
+      setReconnectAttempts(prev => prev + 1);
+      setTimeout(async () => {
+        try {
+          if (device?.gatt) {
+            await device.gatt.connect();
+            setIsConnected(true);
+          }
+        } catch (error) {
+          console.error('Reconnection failed:', error);
+          setError('再接続に失敗しました');
+        }
+      }, RECONNECT_DELAY);
+    }
+  }, [device, isActive, reconnectAttempts]);
+
+  // データの有効性チェック
+  useEffect(() => {
+    const checkDataValidity = () => {
+      const now = Date.now();
+      if (isConnected && now - sensorData.lastUpdate > 10000) {
+        setError('センサーデータの更新が停止しています');
+      }
+    };
+
+    const interval = setInterval(checkDataValidity, 5000);
+    return () => clearInterval(interval);
+  }, [isConnected, sensorData.lastUpdate]);
+
+  // クリーンアップ
+  useEffect(() => {
+    return () => {
+      if (characteristic) {
+        characteristic.stopNotifications();
+      }
+      if (device) {
+        device.removeEventListener('gattserverdisconnected', handleDisconnection);
+      }
+    };
+  }, [characteristic, device, handleDisconnection]);
+
   // アラートレベルの判定
-  const getAlertLevel = () => {
+  const getAlertLevel = useCallback(() => {
     if (!isActive || !isConnected) return 'inactive';
     if (!sensorData.motion) return 'normal';
-    if (sensorData.distance <= 1) return 'danger';
-    if (sensorData.distance <= 3) return 'warning';
+    if (sensorData.distance <= DISTANCE_DANGER_THRESHOLD) return 'danger';
+    if (sensorData.distance <= DISTANCE_WARNING_THRESHOLD) return 'warning';
     return 'normal';
-  };
+  }, [isActive, isConnected, sensorData.motion, sensorData.distance]);
 
   // アラート表示設定
   const alertStyles = {
@@ -119,13 +173,22 @@ const SetsubunDetectorBLE = () => {
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">鬼検知システム</h2>
           <div className="flex space-x-2">
-            <Battery className={`w-6 h-6 ${sensorData.battery < 20 ? 'text-red-500' : 'text-green-500'}`} />
+            <Battery className={`w-6 h-6 ${
+              sensorData.battery < BATTERY_WARNING_THRESHOLD ? 'text-red-500' : 'text-green-500'
+            }`} />
             {isConnected ? 
               <Bluetooth className="w-6 h-6 text-blue-500" /> :
               <BluetoothOff className="w-6 h-6 text-gray-400" />
             }
           </div>
         </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         <div className={`p-4 rounded-lg ${currentAlert.bgColor}`}>
           <div className="flex items-center justify-between">
@@ -142,12 +205,16 @@ const SetsubunDetectorBLE = () => {
             <div className="mt-2">
               <button
                 onClick={connectBluetooth}
-                disabled={isConnected}
+                disabled={isConnected || isConnecting}
                 className={`w-full px-4 py-2 rounded ${
-                  isConnected ? 'bg-green-500 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'
+                  isConnected ? 'bg-green-500 text-white' :
+                  isConnecting ? 'bg-gray-400 text-white' :
+                  'bg-blue-500 text-white hover:bg-blue-600'
                 }`}
               >
-                {isConnected ? '接続済み' : 'Bluetooth接続'}
+                {isConnected ? '接続済み' :
+                 isConnecting ? '接続中...' :
+                 'Bluetooth接続'}
               </button>
             </div>
           </div>
@@ -156,7 +223,10 @@ const SetsubunDetectorBLE = () => {
             <label className="block text-sm font-medium text-gray-700">センサー状態</label>
             <div className="mt-2 flex justify-between items-center">
               <button
-                onClick={() => setIsActive(!isActive)}
+                onClick={() => {
+                  setIsActive(!isActive);
+                  setError(null);
+                }}
                 disabled={!isConnected}
                 className={`px-4 py-2 rounded ${
                   !isConnected ? 'bg-gray-300' :
@@ -184,12 +254,30 @@ const SetsubunDetectorBLE = () => {
                 <span>検知距離:</span>
                 <span>{sensorData.distance.toFixed(1)}m</span>
               </div>
+              <div className="flex justify-between">
+                <span>最終更新:</span>
+                <span>{new Date(sensorData.lastUpdate).toLocaleTimeString()}</span>
+              </div>
             </div>
           </div>
         </div>
       </Card>
     </div>
   );
+};
+
+// エラーメッセージの改善
+const getBetterErrorMessage = (error) => {
+  if (error.name === 'NotFoundError') {
+    return 'デバイスが見つかりませんでした。デバイスの電源が入っているか確認してください。';
+  }
+  if (error.name === 'SecurityError') {
+    return 'Bluetooth接続の権限がありません。ブラウザの設定を確認してください。';
+  }
+  if (error.name === 'NetworkError') {
+    return 'ネットワークエラーが発生しました。接続を確認してください。';
+  }
+  return `エラーが発生しました: ${error.message}`;
 };
 
 export default SetsubunDetectorBLE;
