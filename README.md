@@ -10,14 +10,14 @@
 
 #### プログラミング言語
 
-- **PHP**
-  - Laravel
-
+- **PHP8.2～8.3**
+  - Laravel 10～11
+- **Python**
 #### インフラ系
 
-- **IaC**（独学で勉強中）
+- **IaC**（Terraform、CloudFormation、OpenTofu）
 - **AWS**（ぼちぼち）
-- **GCP**（まぁまぁ）
+- **GoogleCloud**（まぁまぁ）
 - **Linux**
   - 基本的にapt系をよく触ります
   - UbuntuやDebianが好きです。
