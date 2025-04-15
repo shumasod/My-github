@@ -13,8 +13,8 @@
 #### インフラ系
 
 - **IaC**（Terraform、CloudFormation、OpenTofu）
-- **AWS**（ぼちぼち）
-- **GoogleCloud**（まぁまぁ）
+- **AWS**
+- **GoogleCloud**
 - **Linux**
   - 基本的にapt系をよく触ります
   - UbuntuやDebianが好きです。
