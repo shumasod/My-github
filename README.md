@@ -12,7 +12,6 @@
 ### インフラ・クラウド
 - **IaC（Infrastructure as Code）**
   - Terraform
-  - CloudFormation
   - OpenTofu
 - **AWS**
 - **Google Cloud**
