@@ -1,5 +1,5 @@
 #!/bin/bash
-# PHPファイル内の暗黙的nullable型を一行コマンドで修正するスクリプト
+
 
 # 使用例:
 # ./fix-nullable.sh /path/to/your/php/project
