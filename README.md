@@ -13,6 +13,7 @@
 - **IaC（Infrastructure as Code）**
   - Terraform
   - OpenTofu
+  - Ansible
 - **AWS**
 - **Google Cloud**
 - **Linux**
