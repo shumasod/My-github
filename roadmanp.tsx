@@ -181,7 +181,7 @@ export default function HobbyRoadmap() {
             </li>
             <li className="flex items-center gap-2">
               <span className="w-2 h-2 bg-white rounded-full"></span>
-              次のカンファレンスでLT応募を検討
+              次のカンファレンスでプロポーザル応募を検討
             </li>
           </ul>
         </div>
