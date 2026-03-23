@@ -1,22 +1,21 @@
 # Shubox (シューボックス)
 
-#### そこらへんで生きている人です。
+そこらへんで生きている人です。
 
+## スキル
 
-## My Skills
-
-#### プログラミング言語
-
-- **PHP8.3**
+### プログラミング言語
+- **PHP 8.3**
   - Laravel 11
 - **Python**
-#### インフラ系
 
-- **IaC**（Terraform、CloudFormation、OpenTofu）
-- **AWS**（ぼちぼち）
-- **GoogleCloud**（まぁまぁ）
+### インフラ・クラウド
+- **IaC（Infrastructure as Code）**
+  - Terraform
+  - OpenTofu
+  - Ansible
+- **AWS**
+- **Google Cloud**
 - **Linux**
-  - 基本的にapt系をよく触ります
-  - UbuntuやDebianが好きです。
-
-
+  - 主にapt系ディストリビューションを使用
+  - Ubuntu、Debianを愛用

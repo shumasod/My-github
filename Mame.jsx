@@ -1,283 +1,333 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card } from '@/components/ui/card';
-import { Bell, AlertTriangle, Battery, Wifi, Bluetooth, BluetoothOff, AlertCircle } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import React, { useState, useEffect, useRef } from 'react';
+import { AlertCircle, Bluetooth, Power, Battery, Wifi, WifiOff } from 'lucide-react';
 
-// Constants
-const DEVICE_NAME = 'SetsubunDetector';
-const SERVICE_UUID = '0000FFE0-0000-1000-8000-00805F9B34FB';
-const CHARACTERISTIC_UUID = '0000FFE1-0000-1000-8000-00805F9B34FB';
-const RECONNECT_DELAY = 5000;
-const BATTERY_WARNING_THRESHOLD = 20;
-const DISTANCE_WARNING_THRESHOLD = 3;
-const DISTANCE_DANGER_THRESHOLD = 1;
+// システム状態の定義
+const SystemState = {
+  STANDBY: 0,
+  WARNING: 1,
+  ALERT: 2,
+  LOW_BATTERY: 3
+};
 
-const SetsubunDetectorBLE = () => {
-  // State management
+const StateNames = {
+  [SystemState.STANDBY]: '待機中',
+  [SystemState.WARNING]: '警戒モード',
+  [SystemState.ALERT]: '警報モード',
+  [SystemState.LOW_BATTERY]: '電池残量低下'
+};
+
+const SetsubunDetectorApp = () => {
+  // 状態管理
+  const [isConnected, setIsConnected] = useState(false);
+  const [systemActive, setSystemActive] = useState(true);
+  const [currentState, setCurrentState] = useState(SystemState.STANDBY);
+  const [distance, setDistance] = useState(0);
+  const [batteryPercentage, setBatteryPercentage] = useState(100);
+  const [motionDetected, setMotionDetected] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  
+  // Bluetooth関連
   const [device, setDevice] = useState(null);
   const [characteristic, setCharacteristic] = useState(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [error, setError] = useState(null);
-  const [sensorData, setSensorData] = useState({
-    distance: 5,
-    motion: false,
-    battery: 100,
-    lastUpdate: Date.now()
-  });
-  const [isActive, setIsActive] = useState(true);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  
+  // UI状態
+  const [logs, setLogs] = useState([]);
+  const [connectionStatus, setConnectionStatus] = useState('未接続');
+  
+  // リファレンス
+  const logsRef = useRef(logs);
+  logsRef.current = logs;
 
-  // センサーデータの処理
-  const handleSensorData = useCallback((event) => {
-    const value = event.target.value;
-    const decoder = new TextDecoder();
-    const data = decoder.decode(value);
-    
-    try {
-      const parsedData = JSON.parse(data);
-      setSensorData(prev => ({
-        ...prev,
-        distance: parsedData.distance,
-        motion: parsedData.motion,
-        battery: parsedData.battery,
-        lastUpdate: Date.now()
-      }));
-    } catch (e) {
-      console.error('Data parsing error:', e);
-      setError('センサーデータの解析に失敗しました');
-    }
-  }, []);
+  // ログ追加関数
+  const addLog = (message, type = 'info') => {
+    const newLog = {
+      id: Date.now(),
+      timestamp: new Date().toLocaleTimeString('ja-JP'),
+      message,
+      type
+    };
+    setLogs(prev => [newLog, ...prev.slice(0, 49)]); // 最新50件のみ保持
+  };
 
-  // Bluetooth接続処理
+  // Bluetooth接続関数
   const connectBluetooth = async () => {
-    if (isConnecting) return;
-    
-    setIsConnecting(true);
-    setError(null);
-    
     try {
-      const newDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ name: DEVICE_NAME }],
-        optionalServices: [SERVICE_UUID]
+      setConnectionStatus('接続中...');
+      addLog('Bluetoothデバイスを検索中...', 'info');
+      
+      const bluetoothDevice = await navigator.bluetooth.requestDevice({
+        filters: [
+          { namePrefix: 'SetsubunDetector' },
+          { services: ['12345678-1234-1234-1234-123456789abc'] }
+        ],
+        optionalServices: ['12345678-1234-1234-1234-123456789abc']
       });
 
-      newDevice.addEventListener('gattserverdisconnected', handleDisconnection);
-      setDevice(newDevice);
-
-      const server = await newDevice.gatt.connect();
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      addLog(`デバイス発見: ${bluetoothDevice.name}`, 'success');
       
-      await char.startNotifications();
-      char.addEventListener('characteristicvaluechanged', handleSensorData);
+      const server = await bluetoothDevice.gatt.connect();
+      const service = await server.getPrimaryService('12345678-1234-1234-1234-123456789abc');
+      const char = await service.getCharacteristic('87654321-4321-4321-4321-cba987654321');
       
+      setDevice(bluetoothDevice);
       setCharacteristic(char);
       setIsConnected(true);
-      setReconnectAttempts(0);
+      setConnectionStatus('接続済み');
+      
+      addLog('Bluetooth接続完了', 'success');
+
+      // 通知設定
+      await char.startNotifications();
+      char.addEventListener('characteristicvaluechanged', handleBluetoothData);
+
+      // 切断イベントリスナー
+      bluetoothDevice.addEventListener('gattserverdisconnected', handleDisconnect);
+      
     } catch (error) {
-      console.error('Bluetooth connection failed:', error);
-      setError(getBetterErrorMessage(error));
-    } finally {
-      setIsConnecting(false);
+      console.error('Bluetooth接続エラー:', error);
+      addLog(`接続エラー: ${error.message}`, 'error');
+      setConnectionStatus('接続失敗');
     }
   };
 
-  // 切断処理
-  const handleDisconnection = useCallback(async () => {
+  // Bluetooth切断処理
+  const handleDisconnect = () => {
     setIsConnected(false);
-    
-    if (isActive && reconnectAttempts < 3) {
-      setReconnectAttempts(prev => prev + 1);
-      setTimeout(async () => {
-        try {
-          if (device?.gatt) {
-            await device.gatt.connect();
-            setIsConnected(true);
-          }
-        } catch (error) {
-          console.error('Reconnection failed:', error);
-          setError('再接続に失敗しました');
-        }
-      }, RECONNECT_DELAY);
-    }
-  }, [device, isActive, reconnectAttempts]);
+    setDevice(null);
+    setCharacteristic(null);
+    setConnectionStatus('切断されました');
+    addLog('Bluetoothデバイスが切断されました', 'warning');
+  };
 
-  // データの有効性チェック
-  useEffect(() => {
-    const checkDataValidity = () => {
-      const now = Date.now();
-      if (isConnected && now - sensorData.lastUpdate > 10000) {
-        setError('センサーデータの更新が停止しています');
-      }
-    };
-
-    const interval = setInterval(checkDataValidity, 5000);
-    return () => clearInterval(interval);
-  }, [isConnected, sensorData.lastUpdate]);
-
-  // クリーンアップ
-  useEffect(() => {
-    return () => {
-      if (characteristic) {
-        characteristic.stopNotifications();
-      }
-      if (device) {
-        device.removeEventListener('gattserverdisconnected', handleDisconnection);
-      }
-    };
-  }, [characteristic, device, handleDisconnection]);
-
-  // アラートレベルの判定
-  const getAlertLevel = useCallback(() => {
-    if (!isActive || !isConnected) return 'inactive';
-    if (!sensorData.motion) return 'normal';
-    if (sensorData.distance <= DISTANCE_DANGER_THRESHOLD) return 'danger';
-    if (sensorData.distance <= DISTANCE_WARNING_THRESHOLD) return 'warning';
-    return 'normal';
-  }, [isActive, isConnected, sensorData.motion, sensorData.distance]);
-
-  // アラート表示設定
-  const alertStyles = {
-    inactive: {
-      bgColor: 'bg-gray-200',
-      textColor: 'text-gray-600',
-      message: isConnected ? 'システム停止中' : 'デバイス未接続',
-      icon: null
-    },
-    normal: {
-      bgColor: 'bg-green-100',
-      textColor: 'text-green-600',
-      message: '監視中...',
-      icon: null
-    },
-    warning: {
-      bgColor: 'bg-yellow-100',
-      textColor: 'text-yellow-600',
-      message: '鬼が近づいています！',
-      icon: <AlertTriangle className="w-6 h-6" />
-    },
-    danger: {
-      bgColor: 'bg-red-100',
-      textColor: 'text-red-600',
-      message: '鬼が接近中！！',
-      icon: <Bell className="w-6 h-6" />
+  // Bluetoothデータ受信処理
+  const handleBluetoothData = (event) => {
+    try {
+      const decoder = new TextDecoder();
+      const jsonString = decoder.decode(event.target.value);
+      const data = JSON.parse(jsonString);
+      
+      // データ更新
+      setDistance(data.distance * 100); // mからcmに変換
+      setMotionDetected(data.motion);
+      setBatteryPercentage(data.battery);
+      setCurrentState(data.state);
+      setSystemActive(data.active);
+      setLastUpdate(new Date());
+      
+      addLog(`データ受信: 距離=${(data.distance * 100).toFixed(1)}cm, バッテリー=${data.battery.toFixed(1)}%`, 'info');
+      
+    } catch (error) {
+      console.error('データ解析エラー:', error);
+      addLog(`データ解析エラー: ${error.message}`, 'error');
     }
   };
 
-  const currentAlert = alertStyles[getAlertLevel()];
+  // コマンド送信関数
+  const sendCommand = async (command) => {
+    if (!characteristic) {
+      addLog('デバイスが接続されていません', 'error');
+      return;
+    }
+
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(command + '\n');
+      await characteristic.writeValue(data);
+      addLog(`コマンド送信: ${command}`, 'info');
+    } catch (error) {
+      console.error('コマンド送信エラー:', error);
+      addLog(`コマンド送信エラー: ${error.message}`, 'error');
+    }
+  };
+
+  // システム制御関数
+  const handleSystemToggle = () => {
+    const command = systemActive ? 'STOP' : 'START';
+    sendCommand(command);
+  };
+
+  // ステータス更新要求
+  const requestStatus = () => {
+    sendCommand('STATUS');
+  };
+
+  // LEDカラー取得
+  const getLedColor = () => {
+    switch (currentState) {
+      case SystemState.STANDBY: return 'bg-green-500';
+      case SystemState.WARNING: return 'bg-yellow-500';
+      case SystemState.ALERT: return 'bg-red-500';
+      case SystemState.LOW_BATTERY: return 'bg-blue-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  // バッテリーアイコンの色
+  const getBatteryColor = () => {
+    if (batteryPercentage > 50) return 'text-green-500';
+    if (batteryPercentage > 20) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  // 距離に基づく警告レベル
+  const getDistanceWarning = () => {
+    if (distance > 300 || distance === 0) return null;
+    if (distance < 200) return { level: 'danger', message: '緊急警報！' };
+    if (distance < 300) return { level: 'warning', message: '警戒中' };
+    return null;
+  };
+
+  const distanceWarning = getDistanceWarning();
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <Card className="w-full max-w-md p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">鬼検知システム</h2>
-          <div className="flex space-x-2">
-            <Battery className={`w-6 h-6 ${
-              sensorData.battery < BATTERY_WARNING_THRESHOLD ? 'text-red-500' : 'text-green-500'
-            }`} />
-            {isConnected ? 
-              <Bluetooth className="w-6 h-6 text-blue-500" /> :
-              <BluetoothOff className="w-6 h-6 text-gray-400" />
-            }
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
+      <div className="container mx-auto px-4 py-6">
+        {/* ヘッダー */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-yellow-400 to-red-500 bg-clip-text text-transparent">
+            🎌 節分鬼検知システム v1.3 🎌
+          </h1>
+          <p className="text-lg text-gray-300">Bluetooth対応版 - Web制御インターフェース</p>
+        </div>
+
+        {/* 接続ステータス */}
+        <div className="bg-gray-800 rounded-lg p-4 mb-6 border-2 border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className={`w-4 h-4 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
+              <span className="font-semibold">接続状態: {connectionStatus}</span>
+              {isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-red-500" />}
+            </div>
+            <button
+              onClick={isConnected ? () => device?.gatt?.disconnect() : connectBluetooth}
+              className={`px-4 py-2 rounded-lg font-medium ${
+                isConnected 
+                  ? 'bg-red-600 hover:bg-red-700' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              } transition-colors duration-200`}
+            >
+              <Bluetooth className="w-4 h-4 inline mr-2" />
+              {isConnected ? '切断' : '接続'}
+            </button>
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className={`p-4 rounded-lg ${currentAlert.bgColor}`}>
-          <div className="flex items-center justify-between">
-            <span className={`font-medium ${currentAlert.textColor}`}>
-              {currentAlert.message}
-            </span>
-            {currentAlert.icon}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">デバイス接続</label>
-            <div className="mt-2">
-              <button
-                onClick={connectBluetooth}
-                disabled={isConnected || isConnecting}
-                className={`w-full px-4 py-2 rounded ${
-                  isConnected ? 'bg-green-500 text-white' :
-                  isConnecting ? 'bg-gray-400 text-white' :
-                  'bg-blue-500 text-white hover:bg-blue-600'
-                }`}
-              >
-                {isConnected ? '接続済み' :
-                 isConnecting ? '接続中...' :
-                 'Bluetooth接続'}
-              </button>
+        {/* メイン制御パネル */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+          
+          {/* システム状態 */}
+          <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700">
+            <h3 className="text-xl font-bold mb-4 text-center">システム状態</h3>
+            <div className="flex flex-col items-center space-y-4">
+              <div className={`w-16 h-16 rounded-full ${getLedColor()} animate-pulse shadow-lg`}></div>
+              <div className="text-center">
+                <p className="text-lg font-semibold">{StateNames[currentState]}</p>
+                <p className="text-sm text-gray-400">
+                  最終更新: {lastUpdate.toLocaleTimeString('ja-JP')}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">センサー状態</label>
-            <div className="mt-2 flex justify-between items-center">
-              <button
-                onClick={() => {
-                  setIsActive(!isActive);
-                  setError(null);
-                }}
-                disabled={!isConnected}
-                className={`px-4 py-2 rounded ${
-                  !isConnected ? 'bg-gray-300' :
-                  isActive ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700'
-                }`}
-              >
-                {isActive ? '動作中' : '停止中'}
-              </button>
-              <span className="text-sm text-gray-500">
-                バッテリー: {Math.round(sensorData.battery)}%
-              </span>
+          {/* 距離センサー */}
+          <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700">
+            <h3 className="text-xl font-bold mb-4 text-center">距離センサー</h3>
+            <div className="text-center">
+              <div className="text-4xl font-bold mb-2">
+                {distance > 0 ? `${distance.toFixed(1)}cm` : '---'}
+              </div>
+              {distanceWarning && (
+                <div className={`mt-3 p-2 rounded-lg ${
+                  distanceWarning.level === 'danger' 
+                    ? 'bg-red-600 text-white' 
+                    : 'bg-yellow-600 text-white'
+                }`}>
+                  <AlertCircle className="w-4 h-4 inline mr-2" />
+                  {distanceWarning.message}
+                </div>
+              )}
+              {motionDetected && (
+                <div className="mt-2 text-yellow-400">
+                  🚶 動きを検知中
+                </div>
+              )}
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">センサー情報</label>
-            <div className="mt-2 space-y-2">
-              <div className="flex justify-between">
-                <span>動体検知状態:</span>
-                <span className={sensorData.motion ? 'text-red-500' : 'text-green-500'}>
-                  {sensorData.motion ? '検知中' : '検知なし'}
-                </span>
+          {/* バッテリー状態 */}
+          <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700">
+            <h3 className="text-xl font-bold mb-4 text-center">バッテリー</h3>
+            <div className="text-center">
+              <Battery className={`w-12 h-12 mx-auto mb-3 ${getBatteryColor()}`} />
+              <div className="text-3xl font-bold mb-2">
+                {batteryPercentage.toFixed(1)}%
               </div>
-              <div className="flex justify-between">
-                <span>検知距離:</span>
-                <span>{sensorData.distance.toFixed(1)}m</span>
-              </div>
-              <div className="flex justify-between">
-                <span>最終更新:</span>
-                <span>{new Date(sensorData.lastUpdate).toLocaleTimeString()}</span>
+              <div className="w-full bg-gray-600 rounded-full h-3">
+                <div
+                  className={`h-3 rounded-full transition-all duration-500 ${getBatteryColor().replace('text-', 'bg-')}`}
+                  style={{ width: `${Math.max(batteryPercentage, 0)}%` }}
+                ></div>
               </div>
             </div>
           </div>
         </div>
-      </Card>
+
+        {/* 制御ボタン */}
+        <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700 mb-6">
+          <h3 className="text-xl font-bold mb-4 text-center">システム制御</h3>
+          <div className="flex flex-wrap gap-4 justify-center">
+            <button
+              onClick={handleSystemToggle}
+              disabled={!isConnected}
+              className={`px-6 py-3 rounded-lg font-medium transition-colors duration-200 ${
+                systemActive
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-green-600 hover:bg-green-700'
+              } disabled:bg-gray-600 disabled:cursor-not-allowed`}
+            >
+              <Power className="w-5 h-5 inline mr-2" />
+              {systemActive ? 'システム停止' : 'システム開始'}
+            </button>
+            
+            <button
+              onClick={requestStatus}
+              disabled={!isConnected}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors duration-200 disabled:bg-gray-600 disabled:cursor-not-allowed"
+            >
+              ステータス更新
+            </button>
+          </div>
+        </div>
+
+        {/* ログ表示 */}
+        <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700">
+          <h3 className="text-xl font-bold mb-4">システムログ</h3>
+          <div className="bg-black rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+            {logs.length === 0 ? (
+              <p className="text-gray-500">ログがありません</p>
+            ) : (
+              logs.map((log) => (
+                <div key={log.id} className={`mb-1 ${
+                  log.type === 'error' ? 'text-red-400' :
+                  log.type === 'success' ? 'text-green-400' :
+                  log.type === 'warning' ? 'text-yellow-400' :
+                  'text-gray-300'
+                }`}>
+                  <span className="text-gray-500">[{log.timestamp}]</span> {log.message}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* フッター */}
+        <div className="text-center mt-8 text-gray-400">
+          <p>節分鬼検知システム - Web Bluetooth API対応</p>
+          <p className="text-sm">豆まきの効果を科学的に測定します 🫘👹</p>
+        </div>
+      </div>
     </div>
   );
 };
 
-// エラーメッセージの改善
-const getBetterErrorMessage = (error) => {
-  if (error.name === 'NotFoundError') {
-    return 'デバイスが見つかりませんでした。デバイスの電源が入っているか確認してください。';
-  }
-  if (error.name === 'SecurityError') {
-    return 'Bluetooth接続の権限がありません。ブラウザの設定を確認してください。';
-  }
-  if (error.name === 'NetworkError') {
-    return 'ネットワークエラーが発生しました。接続を確認してください。';
-  }
-  return `エラーが発生しました: ${error.message}`;
-};
-
-export default SetsubunDetectorBLE;
+export default SetsubunDetectorApp;

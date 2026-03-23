@@ -1,115 +1,84 @@
-from typing import Literal, Optional
-import random
-import time
-from dataclasses import dataclass
-from enum import Enum
+#!/usr/bin/env python3
+"""
+ソーセージ製造システム - Cron実行対応版
+""
+       
 
-# 定数の定義
-PROCESS_DELAYS = {
-    "grinding": 2,
-    "seasoning": 1,
-    "mixing": 3,
-    "stuffing": 2,
-    "cooking": 3
-}
 
-class CookingMethod(Enum):
-    BOIL = "茹でる"
-    GRILL = "焼く"
-    STEAM = "蒸す"
-
-@dataclass
-class Meat:
-    state: str
-    is_seasoned: bool = False
-    is_mixed: bool = False
-
-class SausageProcessError(Exception):
-    """ソーセージ製造プロセスでのエラーを表すカスタム例外"""
-    pass
-
-def grind_meat(delay: bool = True) -> Meat:
-    """肉をミンチにする処理"""
-    try:
-        print("肉をミンチにしています...")
-        if delay:
-            time.sleep(PROCESS_DELAYS["grinding"])
-        return Meat(state="ミンチ肉")
-    except Exception as e:
-        raise SausageProcessError(f"肉のミンチ処理に失敗: {str(e)}")
-
-def add_spices(meat: Meat, delay: bool = True) -> Meat:
-    """調味料を追加する処理"""
-    if not isinstance(meat, Meat) or meat.state != "ミンチ肉":
-        raise SausageProcessError("無効な材料が渡されました")
+def main():
+    """メイン関数"""
+    parser = argparse.ArgumentParser(
+        description="ソーセージ製造システム",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  %(prog)s                          # 基本実行
+  %(prog)s --delay                  # 遅延ありで実行
+  %(prog)s --log-level DEBUG        # デバッグログ有効
+  %(prog)s --log-file sausage.log   # ファイルにログ出力
+  %(prog)s --cooking-method 焼く     # 調理方法を指定
+  %(prog)s --random-seed 42         # ランダムシード指定
+        """
+    )
     
-    spices = ["塩", "コショウ", "ナツメグ", "パプリカ"]
-    try:
-        print(f"{', '.join(spices)}を追加しています...")
-        if delay:
-            time.sleep(PROCESS_DELAYS["seasoning"])
-        meat.is_seasoned = True
-        return meat
-    except Exception as e:
-        raise SausageProcessError(f"調味料の追加に失敗: {str(e)}")
-
-def mix_ingredients(meat: Meat, delay: bool = True) -> Meat:
-    """材料を混ぜ合わせる処理"""
-    if not meat.is_seasoned:
-        raise SausageProcessError("調味料が追加されていません")
+    parser.add_argument(
+        "--delay", 
+        action="store_true",
+        help="各工程で遅延を有効にする（デフォルト: 無効）"
+    )
     
-    try:
-        print(f"{meat.state}をよく混ぜています...")
-        if delay:
-            time.sleep(PROCESS_DELAYS["mixing"])
-        meat.is_mixed = True
-        return meat
-    except Exception as e:
-        raise SausageProcessError(f"材料の混合に失敗: {str(e)}")
-
-def stuff_casing(meat: Meat, delay: bool = True) -> str:
-    """ケーシングに詰める処理"""
-    if not meat.is_mixed:
-        raise SausageProcessError("材料が適切に混ぜられていません")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="ログレベルを指定（デフォルト: INFO）"
+    )
+    
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        help="ログファイルのパス（指定しない場合は標準出力）"
+    )
+    
+    parser.add_argument(
+        "--cooking-method",
+        choices=["茹でる", "焼く", "蒸す"],
+        help="調理方法を指定（指定しない場合はランダム選択）"
+    )
+    
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        help="ランダムシード値（再現可能な結果を得るため）"
+    )
+    
+    args = parser.parse_args()
+    
+    # ログ設定
+    logger = setup_logging(args.log_level, args.log_file)
     
     try:
-        print("ケーシングに肉を詰めています...")
-        if delay:
-            time.sleep(PROCESS_DELAYS["stuffing"])
-        return "生ソーセージ"
+        # ソーセージ製造実行
+        result = make_sausage(
+            logger=logger,
+            delay=args.delay,
+            cooking_method=args.cooking_method,
+            random_seed=args.random_seed
+        )
+        
+        if result:
+            logger.info("製造処理が正常に完了しました")
+            sys.exit(EXIT_SUCCESS)
+        else:
+            logger.error("製造処理が失敗しました")
+            sys.exit(EXIT_ERROR)
+            
+    except KeyboardInterrupt:
+        logger.warning("処理が中断されました")
+        sys.exit(EXIT_INTERRUPTED)
     except Exception as e:
-        raise SausageProcessError(f"ケーシング詰めに失敗: {str(e)}")
+        logger.critical(f"致命的なエラーが発生しました: {str(e)}")
+        sys.exit(EXIT_ERROR)
 
-def cook_sausage(raw_sausage: str, delay: bool = True) -> str:
-    """ソーセージを調理する処理"""
-    if raw_sausage != "生ソーセージ":
-        raise SausageProcessError("無効なソーセージが渡されました")
-    
-    try:
-        method = random.choice(list(CookingMethod))
-        print(f"ソーセージを{method.value}調理しています...")
-        if delay:
-            time.sleep(PROCESS_DELAYS["cooking"])
-        return "完成したソーセージ"
-    except Exception as e:
-        raise SausageProcessError(f"調理に失敗: {str(e)}")
 
-def make_sausage(delay: bool = True) -> Optional[str]:
-    """ソーセージを製造する主要プロセス"""
-    try:
-        meat = grind_meat(delay)
-        seasoned_meat = add_spices(meat, delay)
-        mixed_meat = mix_ingredients(seasoned_meat, delay)
-        raw_sausage = stuff_casing(mixed_meat, delay)
-        final_sausage = cook_sausage(raw_sausage, delay)
-        print(f"{final_sausage}の製造が完了しました！")
-        return final_sausage
-    except SausageProcessError as e:
-        print(f"エラーが発生しました: {str(e)}")
-        return None
-    except Exception as e:
-        print(f"予期せぬエラーが発生しました: {str(e)}")
-        return None
 
-if __name__ == "__main__":
-    make_sausage()

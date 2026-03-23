@@ -1,0 +1,231 @@
+name: PHP Implicit Nullable Check
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  implicit-nullable-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        tools: composer
+        
+    - name: Install dependencies
+      run: |
+        composer install --prefer-dist --no-progress
+
+    - name: Check for implicit nullable parameters
+      run: |
+        cat > check-implicit-nullable.php << 'EOF'
+        <?php
+        /**
+         * PHP 暗黙的nullable型チェックツール
+         * 
+         * 暗黙的なnullable型の引数を検出し、レポートします。
+         */
+        
+        // コマンドライン引数の処理
+        $directory = $argv[1] ?? __DIR__;
+        
+        // PHPファイルを再帰的に検索
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($directory)
+        );
+        
+        $phpFiles = [];
+        foreach ($files as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                $phpFiles[] = $file->getPathname();
+            }
+        }
+        
+        echo "PHPファイルが" . count($phpFiles) . "個見つかりました\n";
+        
+        // 問題のある関数を検出
+        $issues = [];
+        
+        foreach ($phpFiles as $phpFile) {
+            $content = file_get_contents($phpFile);
+            
+            // トークン解析を行う
+            $tokens = token_get_all($content);
+            $inFunction = false;
+            $functionName = "";
+            $openParenthesis = 0;
+            $closeParenthesis = 0;
+            $typedParams = [];
+            $nullDefaults = [];
+            $lineNumber = 1;
+            $functionLine = 0;
+            
+            // 関数定義を検出
+            for ($i = 0; $i < count($tokens); $i++) {
+                $token = $tokens[$i];
+                
+                // 行番号を追跡
+                if (is_array($token)) {
+                    $lineNumber += substr_count($token[1], "\n");
+                } else {
+                    $lineNumber += substr_count($token, "\n");
+                }
+                
+                // トークンが配列の場合（トークン種別と値がある）
+                if (is_array($token)) {
+                    $tokenType = $token[0];
+                    $tokenValue = $token[1];
+                    
+                    // 関数定義の開始を検出
+                    if ($tokenType === T_FUNCTION) {
+                        $inFunction = true;
+                        $functionLine = $lineNumber;
+                        $openParenthesis = 0;
+                        $closeParenthesis = 0;
+                        $typedParams = [];
+                        $nullDefaults = [];
+                        
+                        // 関数名を取得
+                        for ($j = $i + 1; $j < count($tokens); $j++) {
+                            if (is_array($tokens[$j]) && $tokens[$j][0] === T_STRING) {
+                                $functionName = $tokens[$j][1];
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 型宣言を検出
+                    if ($inFunction && $openParenthesis > 0 && $closeParenthesis === 0) {
+                        if ($tokenType === T_STRING || $tokenType === T_ARRAY || 
+                            $tokenType === T_CALLABLE || $tokenType === T_NAMESPACE || 
+                            $tokenType === T_NS_SEPARATOR) {
+                            
+                            // パラメータの型を記録
+                            $paramName = '';
+                            $paramType = $tokenValue;
+                            
+                            // nullableかどうかを確認
+                            $isNullable = false;
+                            for ($j = $i - 1; $j >= 0; $j--) {
+                                if ($tokens[$j] === '?' || ($tokens[$j] === '(' || $tokens[$j] === ',')) {
+                                    if ($tokens[$j] === '?') {
+                                        $isNullable = true;
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            // 次のトークンがパラメータ名を含むか確認
+                            for ($j = $i + 1; $j < count($tokens); $j++) {
+                                if (is_array($tokens[$j]) && $tokens[$j][0] === T_VARIABLE) {
+                                    $paramName = $tokens[$j][1];
+                                    break;
+                                }
+                            }
+                            
+                            if ($paramName !== '') {
+                                $typedParams[$paramName] = [
+                                    'type' => $paramType,
+                                    'nullable' => $isNullable
+                                ];
+                            }
+                        }
+                    }
+                    
+                    // デフォルト値nullを検出
+                    if ($inFunction && $openParenthesis > 0 && $closeParenthesis === 0 && 
+                        $tokenType === T_VARIABLE) {
+                        $paramName = $tokenValue;
+                        
+                        // 次のトークンが =, NULL かどうか調べる
+                        $foundEquals = false;
+                        $foundNull = false;
+                        
+                        for ($j = $i + 1; $j < count($tokens) && !($tokens[$j] === ',' || $tokens[$j] === ')'); $j++) {
+                            if ($tokens[$j] === '=') {
+                                $foundEquals = true;
+                            } elseif (is_array($tokens[$j]) && (($tokens[$j][0] === T_STRING && strtolower($tokens[$j][1]) === 'null') || $tokens[$j][0] === T_CONSTANT_ENCAPSED_STRING && $tokens[$j][1] === 'NULL')) {
+                                $foundNull = true;
+                            }
+                        }
+                        
+                        if ($foundEquals && $foundNull && isset($typedParams[$paramName])) {
+                            $nullDefaults[$paramName] = $typedParams[$paramName];
+                        }
+                    }
+                } else {
+                    // 文字列トークン
+                    if ($inFunction) {
+                        if ($token === '(') {
+                            $openParenthesis++;
+                        } elseif ($token === ')') {
+                            $closeParenthesis++;
+                            
+                            // 関数定義の終了
+                            if ($openParenthesis === $closeParenthesis) {
+                                $inFunction = false;
+                                
+                                // 暗黙的なnullable型を検出
+                                foreach ($nullDefaults as $paramName => $paramInfo) {
+                                    if (!$paramInfo['nullable']) {
+                                        $issues[] = [
+                                            'file' => $phpFile,
+                                            'line' => $functionLine,
+                                            'function' => $functionName,
+                                            'param' => $paramName,
+                                            'type' => $paramInfo['type']
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 検出結果をGitHub Actionsの形式で出力
+        foreach ($issues as $issue) {
+            $file = str_replace(getcwd() . '/', '', $issue['file']);
+            $line = $issue['line'];
+            $function = $issue['function'];
+            $param = $issue['param'];
+            $type = $issue['type'];
+            
+            echo "::warning file={$file},line={$line}::Implicitly nullable parameter detected: function {$function}, parameter {$param} with type {$type}. Use ?{$type} instead.\n";
+        }
+        
+        // エラーがあれば終了コードを1に設定
+        if (count($issues) > 0) {
+            echo "\n" . count($issues) . " implicitly nullable parameters detected. These will cause deprecation warnings in PHP 8.1+\n";
+            echo "修正例: public function example(Type \$param = null) -> public function example(?Type \$param = null)\n";
+            exit(1);
+        } else {
+            echo "No implicitly nullable parameters detected. Great job!\n";
+            exit(0);
+        }
+        EOF
+        
+        php check-implicit-nullable.php ./src
+        
+    - name: Post summary
+      if: ${{ failure() }}
+      run: |
+        echo "## PHP 暗黙的Nullable型検出結果" >> $GITHUB_STEP_SUMMARY
+        echo "PHP 8.1以降では、型宣言のあるパラメータにnullをデフォルト値としてセットする場合、明示的に`?`記号を使用してnullable型であることを示す必要があります。" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 修正方法" >> $GITHUB_STEP_SUMMARY
+        echo "```php" >> $GITHUB_STEP_SUMMARY
+        echo "// 変更前（非推奨）" >> $GITHUB_STEP_SUMMARY
+        echo "public function method(Type \$param = null)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "// 変更後（推奨）" >> $GITHUB_STEP_SUMMARY
+        echo "public function method(?Type \$param = null)" >> $GITHUB_STEP_SUMMARY
+        echo "```" >> $GITHUB_STEP_SUMMARY
